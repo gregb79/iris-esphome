@@ -129,68 +129,71 @@ void IrisComponent::send_command(IrisCommand command, IrisMode mode, uint32_t re
 }
 
 bool IrisComponent::on_receive(remote_base::RemoteReceiveData data) {
-  // Step 1: find sync pattern: four 0xAA bytes in a row
-  // This is an alternating pattern: mark + space pulses: 1,0,1,0,1,0...
-  // We'll look for a repeated pattern of alternating pulses.
+  static const int SYMBOL = 640;
 
-  // You may need to adjust tolerance thresholds
-  // For example:
-  const uint32_t T1 = 105;  // high pulse duration for '1'
-  const uint32_t T0 = 104;  // low duration for '0'
-  const uint32_t TOL = 20;  // tolerance, µs
-
-  // Find sync: look for alternating mark/space pulses ~105/104 µs
-  // We may need to scan data until we detect 32 such pulses (4 bytes × 8 bits)
-  // For simplicity, skip detailed sync logic — you'd write a custom matcher here.
-
-  // After sync, read frame bytes:
-  uint8_t frame[8] = {0};
-  for (int b = 0; b < 8; b++) {
-    uint8_t byte = 0;
-    for (int bit = 0; bit < 8; bit++) {
-      // Expect a mark or space of ~105 or ~104 µs to decide a '1' or '0'
-      if (data.expect_mark(T1, TOL)) {
-        // saw high pulse
-        byte |= (1 << (7 - bit));  // set bit
-        data.expect_space(T0, TOL);
-      } else if (data.expect_space(T0, TOL)) {
-        // saw low pulse => bit = 0
-        data.expect_mark(T1, TOL);
-      } else {
-        return true;  // invalid signal
-      }
+  // Look for sync pattern (e.g., 4x 0xAA → 10101010)
+  uint8_t sync_count = 0;
+  while (data.is_valid()) {
+    while (data.expect_mark(105) || data.expect_space(104)) {
+      sync_count++;
+      if (sync_count >= 32) break;  // Enough bits for sync (4x 8 bits = 32)
     }
-    frame[b] = byte;
+    if (sync_count >= 32)
+      break;
+
+    sync_count = 0;
+    data.advance();  // Skip to next pulse if this wasn't sync
   }
 
-  // Step 2: verify checksum over frame[0]..frame[6]
-  uint16_t sum = 0;
+  if (sync_count < 32) {
+    ESP_LOGD(TAG, "Invalid sync pattern");
+    return false;
+  }
+
+  // Parse 8-byte frame
+  uint8_t frame[8] = {0};
+  for (uint8_t i = 0; i < 8; i++) {
+    uint8_t byte = 0;
+    for (uint8_t b = 0; b < 8; b++) {
+      byte <<= 1;
+      if (data.expect_mark(105)) {
+        byte |= 1;
+      } else if (data.expect_space(104)) {
+        // bit stays 0
+      } else {
+        ESP_LOGW(TAG, "Invalid bit timing");
+        return false;
+      }
+    }
+    frame[i] = byte;
+  }
+
+  // Compute checksum (2's complement from bytes 0 to 6)
+  uint8_t sum = 0;
   for (int i = 0; i <= 6; i++) {
     sum += frame[i];
   }
-  uint8_t expected = static_cast<uint8_t>(0x100 - (sum & 0xFF));
-  if (expected != frame[7]) {
-    ESP_LOGW(TAG, "Checksum mismatch: got 0x%02X, expected 0x%02X",
-             frame[7], expected);
-    return true;
+  uint8_t expected_checksum = static_cast<uint8_t>(0x100 - sum);
+
+  if (frame[7] != expected_checksum) {
+    ESP_LOGW(TAG, "Invalid checksum: got 0x%02X, expected 0x%02X", frame[7], expected_checksum);
+    return false;
   }
 
-  // Step 3: extract values
-  uint32_t address = (frame[2] << 8) | frame[3];
-  uint16_t command = frame[5];
-  uint16_t mode = frame[6];
+  // Decode components from frame
+  uint32_t address = (static_cast<uint16_t>(frame[2]) << 8) | frame[3];
+  uint8_t command = frame[5];
+  uint8_t mode = frame[6];
 
-  ESP_LOGD(TAG, "Decoded frame: address=0x%04X, command=0x%02X, mode=0x%02X",
-           address, command, mode);
-
-  // Optionally notify sensors or handle command
-  for (auto *sensor : this->sensors_) {
-    // e.g. sensor->update…
-    // But in your case probably you want to map command/mode further
-  }
+  ESP_LOGI(TAG, "Received frame:");
+  ESP_LOGI(TAG, "  Address: 0x%04X", address);
+  ESP_LOGI(TAG, "  Command: 0x%02X", command);
+  ESP_LOGI(TAG, "  Mode:    0x%02X", mode);
+  ESP_LOGI(TAG, "  Checksum: 0x%02X (valid)", frame[7]);
 
   return true;
 }
+
 
 
 }  // namespace iris
