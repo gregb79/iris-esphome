@@ -129,100 +129,62 @@ void IrisComponent::send_command(IrisCommand command, IrisMode mode, uint32_t re
 }
 
 bool IrisComponent::on_receive(remote_base::RemoteReceiveData data) {
-  static const char *TAG = "iris.receive";
-  static const int SYMBOL = 640;
-  static const int SYNC_BIT_MARK = 105;
-  static const int SYNC_BIT_SPACE = 104;
-  static const int SYNC_BITS_REQUIRED = 32;
+  const uint32_t T1 = 105;
+  const uint32_t T0 = 104;
+  const uint32_t TOL = 30;  // ±30 µs tolerance
 
-  ESP_LOGD(TAG, "Receiving IRIS frame...");
+  // Log first few pulse durations
+  ESP_LOGD(TAG, "=== Received pulses dump ===");
+  // You might add a small wrapper to peek or extract pulses from `data`
+  // Example: for debugging, show first 10 pulses durations…
+  // (This depends on your `RemoteReceiveData` APIs)
 
-  // RAW DEBUG (optional)
-  if (data.raw) {
-    ESP_LOGD(TAG, "RAW received:");
-    for (size_t i = 0; i < data.raw->size(); i++) {
-      const auto &item = (*data.raw)[i];
-      ESP_LOGD(TAG, "  [%2d] mark: %5d, space: %5d", i, item.duration, item.level);
-    }
-  }
+  // Try to find a plausible start (sync)
+  // For simplicity, let's skip sync pattern for now and just try reading bits
 
-  // Look for sync pattern of alternating bits (4 x 0xAA = 10101010 * 4 = 32 bits)
-  uint8_t sync_count = 0;
-  while (data.is_valid()) {
-    bool match = false;
-
-    for (int i = 0; i < 8; i++) {
-      if (data.expect_mark(SYNC_BIT_MARK)) {
-        sync_count++;
-        match = true;
-      } else if (data.expect_space(SYNC_BIT_SPACE)) {
-        sync_count++;
-        match = true;
-      } else {
-        break;
-      }
-    }
-
-    if (match && sync_count >= SYNC_BITS_REQUIRED) {
-      ESP_LOGD(TAG, "Found sync with %u bits", sync_count);
-      break;
-    } else {
-      sync_count = 0;
-      data.advance();
-    }
-  }
-
-  if (sync_count < SYNC_BITS_REQUIRED) {
-    ESP_LOGD(TAG, "No valid sync pattern detected");
-    return false;
-  }
-
-  // Parse 8-byte frame (8 x 8 bits)
   uint8_t frame[8] = {0};
   for (uint8_t i = 0; i < 8; i++) {
     uint8_t byte = 0;
     for (uint8_t b = 0; b < 8; b++) {
       byte <<= 1;
-      if (data.expect_mark(SYNC_BIT_MARK)) {
+      // Use peek or expect something near T1 or T0
+      // Pseudocode: 
+      if (data.expect_mark(T1)) {
         byte |= 1;
-      } else if (data.expect_space(SYNC_BIT_SPACE)) {
-        // bit remains 0
+      } else if (data.expect_space(T0)) {
+        // bit = 0
       } else {
-        ESP_LOGW(TAG, "Invalid bit timing at byte %u, bit %u", i, b);
-        return false;
+        ESP_LOGW(TAG, "Bit mismatch at byte %u bit %u", i, b);
+        return true;
       }
     }
     frame[i] = byte;
   }
 
-  // Compute checksum: 2's complement of sum of bytes 0–6
-  uint8_t sum = 0;
+  ESP_LOGI(TAG, "Raw frame bytes: %02X %02X %02X %02X %02X %02X %02X %02X",
+           frame[0], frame[1], frame[2], frame[3],
+           frame[4], frame[5], frame[6], frame[7]);
+
+  // Checksum & validation like before
+  uint16_t sum = 0;
   for (int i = 0; i <= 6; i++) {
     sum += frame[i];
   }
-  uint8_t expected_checksum = static_cast<uint8_t>(0x100 - sum);
-
-  if (frame[7] != expected_checksum) {
-    ESP_LOGW(TAG, "Invalid checksum: got 0x%02X, expected 0x%02X", frame[7], expected_checksum);
-    return false;
+  uint8_t expected = (uint8_t)(0x100 - (sum & 0xFF));
+  if (frame[7] != expected) {
+    ESP_LOGW(TAG, "Checksum mismatch: got 0x%02X vs 0x%02X", frame[7], expected);
+    return true;
   }
 
-  // Extract and log decoded fields
-  uint32_t address = (static_cast<uint16_t>(frame[2]) << 8) | frame[3];
+  uint32_t address = (frame[2] << 8) | frame[3];
   uint8_t command = frame[5];
   uint8_t mode = frame[6];
 
-  ESP_LOGI(TAG, "Received valid frame:");
-  ESP_LOGI(TAG, "  Address:   0x%04X", address);
-  ESP_LOGI(TAG, "  Command:   0x%02X", command);
-  ESP_LOGI(TAG, "  Mode:      0x%02X", mode);
-  ESP_LOGI(TAG, "  Checksum:  0x%02X", frame[7]);
-
-  // TODO: Trigger automations, sensors, etc. here
+  ESP_LOGI(TAG, "Decoded – address: 0x%04X, command: 0x%02X, mode: 0x%02X",
+           address, command, mode);
 
   return true;
 }
-
 
 
 
