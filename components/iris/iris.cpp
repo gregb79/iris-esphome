@@ -129,61 +129,18 @@ void IrisComponent::send_command(IrisCommand command, IrisMode mode, uint32_t re
 }
 
 bool IrisComponent::on_receive(remote_base::RemoteReceiveData data) {
-  const uint32_t T1 = 105;
-  const uint32_t T0 = 104;
-  const uint32_t TOL = 30;  // ±30 µs tolerance
+  static const char *TAG = "iris.sniffer";
 
-  // Log first few pulse durations
-  ESP_LOGD(TAG, "=== Received pulses dump ===");
-  // You might add a small wrapper to peek or extract pulses from `data`
-  // Example: for debugging, show first 10 pulses durations…
-  // (This depends on your `RemoteReceiveData` APIs)
+  ESP_LOGD(TAG, "Sniffer: Got a frame with %u items", data.size());
 
-  // Try to find a plausible start (sync)
-  // For simplicity, let's skip sync pattern for now and just try reading bits
-
-  uint8_t frame[8] = {0};
-  for (uint8_t i = 0; i < 8; i++) {
-    uint8_t byte = 0;
-    for (uint8_t b = 0; b < 8; b++) {
-      byte <<= 1;
-      // Use peek or expect something near T1 or T0
-      // Pseudocode: 
-      if (data.expect_mark(T1)) {
-        byte |= 1;
-      } else if (data.expect_space(T0)) {
-        // bit = 0
-      } else {
-        ESP_LOGW(TAG, "Bit mismatch at byte %u bit %u", i, b);
-        return true;
-      }
-    }
-    frame[i] = byte;
+  // Log first few pulses (mark / space durations)
+  for (size_t i = 0; i < data.size() && i < 20; i++) {
+    auto &item = data.item(i);
+    // item.mark, item.space (or equivalent methods) — check your API
+    ESP_LOGD(TAG, "  item[%u]: mark=%u, space=%u", i, item.mark, item.space);
   }
 
-  ESP_LOGI(TAG, "Raw frame bytes: %02X %02X %02X %02X %02X %02X %02X %02X",
-           frame[0], frame[1], frame[2], frame[3],
-           frame[4], frame[5], frame[6], frame[7]);
-
-  // Checksum & validation like before
-  uint16_t sum = 0;
-  for (int i = 0; i <= 6; i++) {
-    sum += frame[i];
-  }
-  uint8_t expected = (uint8_t)(0x100 - (sum & 0xFF));
-  if (frame[7] != expected) {
-    ESP_LOGW(TAG, "Checksum mismatch: got 0x%02X vs 0x%02X", frame[7], expected);
-    return true;
-  }
-
-  uint32_t address = (frame[2] << 8) | frame[3];
-  uint8_t command = frame[5];
-  uint8_t mode = frame[6];
-
-  ESP_LOGI(TAG, "Decoded – address: 0x%04X, command: 0x%02X, mode: 0x%02X",
-           address, command, mode);
-
-  return true;
+  return true;  // consume, but nothing decoded
 }
 
 
