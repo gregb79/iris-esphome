@@ -128,22 +128,5 @@ void IrisComponent::send_command(IrisCommand command, IrisMode mode, uint32_t re
   call.perform();
 }
 
-bool IrisComponent::on_receive(remote_base::RemoteReceiveData data) {
-  static const char *TAG = "iris.sniffer";
-
-  ESP_LOGD(TAG, "Sniffer: Got a frame with %u items", data.size());
-
-  // Log first few pulses (mark / space durations)
-  for (size_t i = 0; i < data.size() && i < 20; i++) {
-    auto &item = data.item(i);
-    // item.mark, item.space (or equivalent methods) — check your API
-    ESP_LOGD(TAG, "  item[%u]: mark=%u, space=%u", i, item.mark, item.space);
-  }
-
-  return true;  // consume, but nothing decoded
-}
-
-
-
 }  // namespace iris
 }  // namespace esphome
