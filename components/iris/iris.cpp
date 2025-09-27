@@ -129,46 +129,73 @@ void IrisComponent::send_command(IrisCommand command, IrisMode mode, uint32_t re
 }
 
 bool IrisComponent::on_receive(remote_base::RemoteReceiveData data) {
+  static const char *TAG = "iris.receive";
   static const int SYMBOL = 640;
+  static const int SYNC_BIT_MARK = 105;
+  static const int SYNC_BIT_SPACE = 104;
+  static const int SYNC_BITS_REQUIRED = 32;
 
-  // Look for sync pattern (e.g., 4x 0xAA → 10101010)
-  uint8_t sync_count = 0;
-  while (data.is_valid()) {
-    while (data.expect_mark(105) || data.expect_space(104)) {
-      sync_count++;
-      if (sync_count >= 32) break;  // Enough bits for sync (4x 8 bits = 32)
+  ESP_LOGD(TAG, "Receiving IRIS frame...");
+
+  // RAW DEBUG (optional)
+  if (data.raw) {
+    ESP_LOGD(TAG, "RAW received:");
+    for (size_t i = 0; i < data.raw->size(); i++) {
+      const auto &item = (*data.raw)[i];
+      ESP_LOGD(TAG, "  [%2d] mark: %5d, space: %5d", i, item.duration, item.level);
     }
-    if (sync_count >= 32)
-      break;
-
-    sync_count = 0;
-    data.advance();  // Skip to next pulse if this wasn't sync
   }
 
-  if (sync_count < 32) {
-    ESP_LOGD(TAG, "Invalid sync pattern");
+  // Look for sync pattern of alternating bits (4 x 0xAA = 10101010 * 4 = 32 bits)
+  uint8_t sync_count = 0;
+  while (data.is_valid()) {
+    bool match = false;
+
+    for (int i = 0; i < 8; i++) {
+      if (data.expect_mark(SYNC_BIT_MARK)) {
+        sync_count++;
+        match = true;
+      } else if (data.expect_space(SYNC_BIT_SPACE)) {
+        sync_count++;
+        match = true;
+      } else {
+        break;
+      }
+    }
+
+    if (match && sync_count >= SYNC_BITS_REQUIRED) {
+      ESP_LOGD(TAG, "Found sync with %u bits", sync_count);
+      break;
+    } else {
+      sync_count = 0;
+      data.advance();
+    }
+  }
+
+  if (sync_count < SYNC_BITS_REQUIRED) {
+    ESP_LOGD(TAG, "No valid sync pattern detected");
     return false;
   }
 
-  // Parse 8-byte frame
+  // Parse 8-byte frame (8 x 8 bits)
   uint8_t frame[8] = {0};
   for (uint8_t i = 0; i < 8; i++) {
     uint8_t byte = 0;
     for (uint8_t b = 0; b < 8; b++) {
       byte <<= 1;
-      if (data.expect_mark(105)) {
+      if (data.expect_mark(SYNC_BIT_MARK)) {
         byte |= 1;
-      } else if (data.expect_space(104)) {
-        // bit stays 0
+      } else if (data.expect_space(SYNC_BIT_SPACE)) {
+        // bit remains 0
       } else {
-        ESP_LOGW(TAG, "Invalid bit timing");
+        ESP_LOGW(TAG, "Invalid bit timing at byte %u, bit %u", i, b);
         return false;
       }
     }
     frame[i] = byte;
   }
 
-  // Compute checksum (2's complement from bytes 0 to 6)
+  // Compute checksum: 2's complement of sum of bytes 0–6
   uint8_t sum = 0;
   for (int i = 0; i <= 6; i++) {
     sum += frame[i];
@@ -180,19 +207,22 @@ bool IrisComponent::on_receive(remote_base::RemoteReceiveData data) {
     return false;
   }
 
-  // Decode components from frame
+  // Extract and log decoded fields
   uint32_t address = (static_cast<uint16_t>(frame[2]) << 8) | frame[3];
   uint8_t command = frame[5];
   uint8_t mode = frame[6];
 
-  ESP_LOGI(TAG, "Received frame:");
-  ESP_LOGI(TAG, "  Address: 0x%04X", address);
-  ESP_LOGI(TAG, "  Command: 0x%02X", command);
-  ESP_LOGI(TAG, "  Mode:    0x%02X", mode);
-  ESP_LOGI(TAG, "  Checksum: 0x%02X (valid)", frame[7]);
+  ESP_LOGI(TAG, "Received valid frame:");
+  ESP_LOGI(TAG, "  Address:   0x%04X", address);
+  ESP_LOGI(TAG, "  Command:   0x%02X", command);
+  ESP_LOGI(TAG, "  Mode:      0x%02X", mode);
+  ESP_LOGI(TAG, "  Checksum:  0x%02X", frame[7]);
+
+  // TODO: Trigger automations, sensors, etc. here
 
   return true;
 }
+
 
 
 
