@@ -70,5 +70,5 @@ class IrisComponent : public Component, public remote_base::RemoteReceiverListen
   std::vector<IrisSensor *> sensors_;
 };
 
-}  // namespace acurite
+}  // namespace iris
 }  // namespace esphome
