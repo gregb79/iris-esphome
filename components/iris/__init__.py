@@ -4,6 +4,7 @@ from esphome.components import remote_transmitter
 from esphome.components import remote_receiver
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_ADDRESS
+from esphome.components import remote_base
 
 CODEOWNERS = ["@swoboda1337"]
 DEPENDENCIES = ["remote_transmitter", "remote_receiver"]
@@ -79,7 +80,7 @@ async def to_code(config):
     receiver = await cg.get_variable(config[CONF_RECEIVER_ID])
     cg.add(var.set_tx(transmitter))
     cg.add(var.set_rx(receiver))
-    cg.add(receiver.register_listener(var))
+    await remote_base.register_listener(var, receiver)
 
     address = config.get(CONF_ADDRESS, 0xF9CB)
     cg.add(var.set_address(address))
