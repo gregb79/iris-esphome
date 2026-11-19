@@ -19,11 +19,11 @@ void IrisComponent::setup() {
 
   char address_str[16];
 
-  snprintf(
-      address_str,
-      sizeof(address_str),
-      "%04X",
-      this->address_);
+snprintf(
+    address_str,
+    sizeof(address_str),
+    "%04" PRIX32,
+    this->address_);
 
   uint32_t type =
       fnv1_hash(
