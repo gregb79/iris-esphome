@@ -4,6 +4,7 @@ from esphome.components import remote_transmitter
 from esphome.components import remote_receiver
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_ADDRESS
+
 from esphome.components import remote_base
 
 CODEOWNERS = ["@swoboda1337"]
