@@ -16,10 +16,25 @@ void IrisComponent::dump_config() {
 }
 
 void IrisComponent::setup() {
-  uint32_t type = fnv1_hash(std::string("Iris: ") + format_hex(this->address_));
-  this->preferences_ = global_preferences->make_preference<uint16_t>(type);
+
+  char address_str[16];
+
+  snprintf(
+      address_str,
+      sizeof(address_str),
+      "%04X",
+      this->address_);
+
+  uint32_t type =
+      fnv1_hash(
+        std::string("Iris: ")
+        + address_str
+      );
+
+  this->preferences_ =
+      global_preferences->make_preference<uint16_t>(type);
+
   this->preferences_.load(&this->code_);
-  this->rx_->register_listener(this);
 }
 
 void IrisComponent::set_code(uint16_t code) {
