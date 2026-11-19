@@ -79,6 +79,7 @@ async def to_code(config):
     receiver = await cg.get_variable(config[CONF_RECEIVER_ID])
     cg.add(var.set_tx(transmitter))
     cg.add(var.set_rx(receiver))
+    cg.add(receiver.register_listener(var))
 
     address = config.get(CONF_ADDRESS, 0xF9CB)
     cg.add(var.set_address(address))
