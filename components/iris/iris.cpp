@@ -191,12 +191,22 @@ bool IrisComponent::on_receive(remote_base::RemoteReceiveData data) {
     return true;
   }
 
-  uint32_t address = (frame[2] << 8) | frame[3];
-  uint8_t command = frame[5];
-  uint8_t mode = frame[6];
+uint32_t address =
+    (frame[2] << 8) | frame[3];
 
-  ESP_LOGI(TAG, "Decoded – address: 0x%04X, command: 0x%02X, mode: 0x%02X",
-           address, command, mode);
+uint8_t command =
+    frame[5];
+
+uint8_t mode =
+    frame[6];
+
+ESP_LOGI(
+    TAG,
+    "Decoded - address: 0x%04" PRIX32 ", command: 0x%02X, mode: 0x%02X",
+    address,
+    command,
+    mode);
+
 
   return true;
 }
